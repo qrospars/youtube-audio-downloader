@@ -1,0 +1,10 @@
+ffmpeg.exe
+ffmpeg
+youtube-audio-downloader.zip
+youtube_mp3_downloader.spec
+
+/build
+/dist
+/downloads
+/downloads2
+/yt_dlp
