@@ -110,7 +110,7 @@ Produces a single double‑clickable file—no Python or FFmpeg install needed.
 ### macOS (PyInstaller)
 
 1. **Install** and place a static `ffmpeg` binary beside the script.
-2. **Bundle**
+2. **Bundle** 
 
    ```bash
    python3 -m PyInstaller \
