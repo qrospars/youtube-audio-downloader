@@ -3,7 +3,7 @@ name: Build & Release Windows
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
 
 jobs:
   build_and_release:
@@ -15,7 +15,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install FFmpeg
         run: choco install ffmpeg -y
@@ -25,13 +25,7 @@ jobs:
 
       - name: Build single-file EXE
         run: |
-          py -3 -m PyInstaller ^
-            --noconfirm ^
-            --onefile ^
-            --windowed ^
-            --add-binary "ffmpeg.exe;." ^
-            --name youtube_mp3_downloader ^
-            youtube_mp3_downloader.pyw
+          py -3 -m PyInstaller --noconfirm --onefile --windowed --add-binary "ffmpeg.exe;." --name youtube_mp3_downloader youtube_mp3_downloader.pyw
 
       - name: Prepare artifact
         run: |
