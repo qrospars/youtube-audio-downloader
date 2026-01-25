@@ -96,13 +96,7 @@ Produces a single double‑clickable file—no Python or FFmpeg install needed.
 2. **Bundle**
 
    ```powershell
-   py -3 -m PyInstaller \
-     --noconfirm \
-     --onefile \
-     --windowed \
-     --add-binary "ffmpeg.exe;." \
-     --name youtube_mp3_downloader \
-     youtube_mp3_downloader.pyw
+   py -3 -m PyInstaller --noconfirm --onefile --windowed --add-binary "ffmpeg.exe;." --name youtube_mp3_downloader youtube_mp3_downloader.pyw
    ```
 
 3. **Distribute** the generated `dist\youtube_mp3_downloader.exe`.
