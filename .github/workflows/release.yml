@@ -1,0 +1,130 @@
+name: Release and Changelog
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install ffmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v2
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install yt-dlp pyinstaller
+      
+      - name: Build EXE with PyInstaller
+        run: |
+          python -m PyInstaller --noconfirm --onefile --windowed `
+            --name youtube_mp3_downloader `
+            youtube_mp3_downloader.pyw
+      
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube_mp3_downloader-windows
+          path: dist/youtube_mp3_downloader.exe
+
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install ffmpeg
+        run: brew install ffmpeg
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install yt-dlp pyinstaller
+      
+      - name: Build macOS app with PyInstaller
+        run: |
+          python -m PyInstaller --noconfirm --onefile --windowed \
+            --name youtube_mp3_downloader \
+            youtube_mp3_downloader.pyw
+      
+      - name: Create macOS DMG
+        run: |
+          mkdir -p dmg_staging
+          cp -r dist/youtube_mp3_downloader.app dmg_staging/
+          hdiutil create -volname "youtube_mp3_downloader" \
+            -srcfolder dmg_staging \
+            -ov -format UDZO dist/youtube_mp3_downloader.dmg
+      
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube_mp3_downloader-macos
+          path: dist/youtube_mp3_downloader.dmg
+
+  release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: youtube_mp3_downloader-windows
+          path: ./windows
+      
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: youtube_mp3_downloader-macos
+          path: ./macos
+      
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            CHANGELOG=$(git log --oneline --pretty=format:"- %s" | head -20)
+          else
+            CHANGELOG=$(git log $LAST_TAG..HEAD --oneline --pretty=format:"- %s")
+          fi
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v$(date +%Y.%m.%d.%H%M%S)"
+          gh release create "$TAG" \
+            ./windows/youtube_mp3_downloader.exe \
+            ./macos/youtube_mp3_downloader.dmg \
+            --title "Release $TAG" \
+            --notes "## Changes
+
+          ${{ steps.changelog.outputs.changelog }}
+
+          ## Downloads
+          - **Windows**: youtube_mp3_downloader.exe
+          - **macOS**: youtube_mp3_downloader.dmg"
