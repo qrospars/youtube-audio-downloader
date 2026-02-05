@@ -1,0 +1,10 @@
+[project]
+name = "youtube-mp3-downloader"
+requires-python = ">=3.8"
+dependencies = ["yt-dlp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: tests that require network access and ffmpeg",
+]

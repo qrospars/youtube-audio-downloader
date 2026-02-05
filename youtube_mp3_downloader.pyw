@@ -7,9 +7,13 @@ Features:
   - Per-video retry with exponential backoff
   - Real-time progress bar and per-video status
   - Cancel support
+  - Skip already-downloaded videos
+  - Remembers output folder between sessions
+  - Confirmation dialog for playlists
   - Portable: works in PyInstaller frozen builds
 """
 
+import json
 import sys
 import shutil
 import threading
@@ -22,7 +26,7 @@ from queue import Queue, Empty
 from typing import Optional, Callable
 
 import tkinter as tk
-from tkinter import filedialog, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 try:
     import yt_dlp
@@ -48,6 +52,33 @@ def _default_output_dir() -> str:
     return str(Path.home() / "Music" / "YouTube Downloads")
 
 
+def _settings_path() -> Path:
+    """Return path to the persistent settings file."""
+    if getattr(sys, "frozen", False):
+        # Frozen build: store settings next to the executable
+        return Path(sys.executable).parent / ".yt_mp3_settings.json"
+    return Path.home() / ".yt_mp3_settings.json"
+
+
+def _load_settings() -> dict:
+    path = _settings_path()
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _save_settings(settings: dict) -> None:
+    try:
+        _settings_path().write_text(
+            json.dumps(settings, indent=2), encoding="utf-8"
+        )
+    except OSError:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Download data types
 # ---------------------------------------------------------------------------
@@ -57,6 +88,7 @@ class VideoStatus(Enum):
     DOWNLOADING = "DOWNLOADING"
     POSTPROCESSING = "CONVERTING"
     COMPLETED = "COMPLETED"
+    SKIPPED = "SKIPPED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
 
@@ -140,7 +172,21 @@ class DownloadEngine:
             "id": info.get("id", ""),
         }]
 
-    def start(self, entries: list[dict]):
+    @staticmethod
+    def find_existing(entries: list[dict], outdir: Path) -> set[str]:
+        """Return set of video IDs whose MP3 already exists in outdir."""
+        if not outdir.exists():
+            return set()
+        existing_names = {f.stem.lower() for f in outdir.glob("*.mp3")}
+        found = set()
+        for entry in entries:
+            title = entry.get("title", "")
+            if title.lower() in existing_names:
+                found.add(entry["id"])
+        return found
+
+    def start(self, entries: list[dict], skip_ids: Optional[set[str]] = None):
+        skip_ids = skip_ids or set()
         total = len(entries)
         self._tasks = [
             VideoTask(
@@ -149,6 +195,8 @@ class DownloadEngine:
                 video_id=e["id"],
                 index=i + 1,
                 total=total,
+                status=(VideoStatus.SKIPPED if e["id"] in skip_ids
+                        else VideoStatus.PENDING),
             )
             for i, e in enumerate(entries)
         ]
@@ -175,7 +223,8 @@ class DownloadEngine:
                     "preferredquality": "320",
                 },
                 {"key": "FFmpegMetadata", "add_metadata": True},
-                {"key": "EmbedThumbnail"},
+                {"key": "FFmpegThumbnailsConvertor", "format": "jpg"},
+                {"key": "EmbedThumbnail", "already_have_thumbnail": False},
             ],
             "writethumbnail": True,
             # reliability
@@ -201,12 +250,23 @@ class DownloadEngine:
         return opts
 
     def _run_pool(self):
+        # Only submit tasks that need downloading
+        downloadable = [t for t in self._tasks if t.status == VideoStatus.PENDING]
+        # Mark skipped tasks immediately
+        for t in self._tasks:
+            if t.status == VideoStatus.SKIPPED:
+                self.on_update(t)
+
+        if not downloadable:
+            self.on_complete(self._tasks)
+            return
+
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=self.max_workers
         ) as pool:
             futures = {
                 pool.submit(self._download_one, task): task
-                for task in self._tasks
+                for task in downloadable
             }
             for future in concurrent.futures.as_completed(futures):
                 task = futures[future]
@@ -302,6 +362,7 @@ _STATUS_COLORS = {
     VideoStatus.DOWNLOADING: _ACCENT,
     VideoStatus.POSTPROCESSING: "#ffb74d",
     VideoStatus.COMPLETED: "#81c784",
+    VideoStatus.SKIPPED: "#888888",
     VideoStatus.FAILED: "#ff5555",
     VideoStatus.CANCELLED: "#888888",
 }
@@ -317,6 +378,10 @@ class App:
 
         self.engine: Optional[DownloadEngine] = None
         self._update_queue: Queue = Queue()
+
+        # Load saved settings
+        settings = _load_settings()
+        saved_outdir = settings.get("output_dir", "")
 
         # -- URL row ---------------------------------------------------------
         tk.Label(root, text="YouTube URL:", bg=_BG, fg=_FG, font=_FONT).pack(
@@ -338,7 +403,7 @@ class App:
         )
         row = tk.Frame(root, bg=_BG)
         row.pack(fill="x", padx=12)
-        self.outdir_var = tk.StringVar(value=_default_output_dir())
+        self.outdir_var = tk.StringVar(value=saved_outdir or _default_output_dir())
         tk.Entry(
             row,
             textvariable=self.outdir_var,
@@ -425,12 +490,34 @@ class App:
         self.log.tag_configure("error", foreground="#ff5555")
         self.log.tag_configure("info", foreground=_FG)
 
+        # If no saved folder, prompt user on first launch
+        if not saved_outdir:
+            self.root.after(100, self._prompt_initial_folder)
+
     # -- folder chooser ------------------------------------------------------
 
     def _choose_folder(self):
         path = filedialog.askdirectory()
         if path:
             self.outdir_var.set(path)
+            self._persist_outdir(path)
+
+    def _prompt_initial_folder(self):
+        """Ask user to pick an output folder on first launch."""
+        result = messagebox.askyesno(
+            "Output Folder",
+            f"Downloads will be saved to:\n\n{_default_output_dir()}\n\n"
+            "Would you like to choose a different folder?",
+        )
+        if result:
+            self._choose_folder()
+        else:
+            self._persist_outdir(self.outdir_var.get())
+
+    def _persist_outdir(self, path: str):
+        settings = _load_settings()
+        settings["output_dir"] = path
+        _save_settings(settings)
 
     # -- start / cancel ------------------------------------------------------
 
@@ -462,6 +549,9 @@ class App:
                 "Error: yt-dlp module missing.  pip install yt-dlp", error=True
             )
             return
+
+        # Persist the chosen output folder
+        self._persist_outdir(str(outdir))
 
         workers = int(self.workers_var.get())
 
@@ -499,7 +589,38 @@ class App:
             self.cancel_btn.configure(state="disabled")
             return
 
-        self._append_log(f"Found {len(entries)} video(s). Starting download\u2026\n")
+        # Check which videos are already downloaded
+        already = DownloadEngine.find_existing(entries, outdir)
+        new_count = len(entries) - len(already)
+
+        # For playlists (>1 video), show confirmation dialog
+        if len(entries) > 1:
+            skip_msg = (
+                f"\n\n({len(already)} already downloaded, will be skipped)"
+                if already else ""
+            )
+            confirmed = messagebox.askyesno(
+                "Confirm Download",
+                f"Found {len(entries)} video(s) in playlist.\n"
+                f"{new_count} new download(s) to start.{skip_msg}\n\n"
+                "Proceed?",
+            )
+            if not confirmed:
+                self._append_log("Download cancelled by user.")
+                self.dl_btn.configure(state="normal")
+                self.cancel_btn.configure(state="disabled")
+                return
+
+        if new_count == 0:
+            self._append_log("All videos already downloaded.")
+            self.dl_btn.configure(state="normal")
+            self.cancel_btn.configure(state="disabled")
+            return
+
+        status_msg = f"Found {len(entries)} video(s)"
+        if already:
+            status_msg += f" ({len(already)} already downloaded)"
+        self._append_log(f"{status_msg}. Starting download\u2026\n")
 
         self.engine = DownloadEngine(
             outdir=outdir,
@@ -517,15 +638,18 @@ class App:
             self.log.mark_set(mark, "end")
             self.log.mark_gravity(mark, "left")
             title = _truncate(entry["title"], 45)
-            line = f"[{i:>{len(str(len(entries)))}}/{len(entries)}] {title:<48s} PENDING"
-            self.log.insert("end", line + "\n", VideoStatus.PENDING.value)
+            is_skip = entry["id"] in already
+            status = "SKIPPED" if is_skip else "PENDING"
+            tag = VideoStatus.SKIPPED.value if is_skip else VideoStatus.PENDING.value
+            line = f"[{i:>{len(str(len(entries)))}}/{len(entries)}] {title:<48s} {status}"
+            self.log.insert("end", line + "\n", tag)
         self.log.configure(state="disabled")
 
         self.pbar["maximum"] = len(entries)
-        self.pbar["value"] = 0
-        self.pbar_label.configure(text=f"0/{len(entries)}")
+        self.pbar["value"] = len(already)
+        self.pbar_label.configure(text=f"{len(already)}/{len(entries)}")
 
-        self.engine.start(entries)
+        self.engine.start(entries, skip_ids=already)
 
     def _on_cancel(self):
         if self.engine:
@@ -590,7 +714,10 @@ class App:
         tasks = self.engine.tasks
         done = sum(
             1 for t in tasks
-            if t.status in (VideoStatus.COMPLETED, VideoStatus.FAILED, VideoStatus.CANCELLED)
+            if t.status in (
+                VideoStatus.COMPLETED, VideoStatus.SKIPPED,
+                VideoStatus.FAILED, VideoStatus.CANCELLED,
+            )
         )
         total = len(tasks)
         self.pbar["value"] = done
@@ -598,6 +725,7 @@ class App:
 
     def _on_all_complete(self, tasks: list[VideoTask]):
         completed = sum(1 for t in tasks if t.status == VideoStatus.COMPLETED)
+        skipped = sum(1 for t in tasks if t.status == VideoStatus.SKIPPED)
         failed = sum(1 for t in tasks if t.status == VideoStatus.FAILED)
         cancelled = sum(1 for t in tasks if t.status == VideoStatus.CANCELLED)
         total = len(tasks)
@@ -605,6 +733,8 @@ class App:
         parts = []
         if completed:
             parts.append(f"{completed} completed")
+        if skipped:
+            parts.append(f"{skipped} skipped")
         if failed:
             parts.append(f"{failed} failed")
         if cancelled:
@@ -617,7 +747,7 @@ class App:
         if failed or cancelled:
             self._append_log(f"\nFinished: {summary}", error=True)
         else:
-            self._append_log(f"\n\u2705 All {total} download(s) completed!")
+            self._append_log(f"\n\u2705 Done! {summary}")
 
         self.dl_btn.configure(state="normal")
         self.cancel_btn.configure(state="disabled")

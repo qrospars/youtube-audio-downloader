@@ -10,3 +10,6 @@ youtube_mp3_downloader.spec
 /yt_dlp
 /test_downloads
 /.venv
+/.pytest_cache
+__pycache__
+.yt_mp3_settings.json
