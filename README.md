@@ -130,6 +130,41 @@ The generated executable is in `dist/`.
 
 ---
 
+## About Antivirus Warnings
+
+When downloading the executable from GitHub Releases, your antivirus software may flag it as a potential threat. This is a **false positive** caused by:
+
+- **PyInstaller pattern**: The executable bundles Python, libraries, and dependencies into a single file. Antivirus software is unfamiliar with this packaging and treats it suspiciously.
+- **Legitimate files**: All releases are built automatically from the public source code in this repository.
+
+### Verify the Download is Safe
+
+**Option 1: Scan with VirusTotal (recommended)**
+
+1. Download the executable from [Releases](../../releases)
+2. Visit [VirusTotal.com](https://www.virustotal.com/)
+3. Upload the `.exe` or `.dmg` file
+4. Wait for the scan (~1 minute)
+5. Review results: Should show 0 or minimal detections from obscure vendors
+
+**Option 2: Build Locally**
+
+Avoid downloads entirely by building from source:
+
+```bash
+git clone https://github.com/qrospars/youtube-audio-downloader.git
+cd youtube-audio-downloader
+pip install -r requirements.txt
+pyinstaller youtube_mp3_downloader.spec
+# Executable is in dist/
+```
+
+**Option 3: Trust the GitHub Release**
+
+Downloads from official GitHub Releases are built automatically by GitHub Actions from the verified source code. If you trust this repository, the executable is safe.
+
+---
+
 ## Contributing
 
 Fork the repo, implement a feature, and submit a pull request. Please adhere to the existing code style and dark-mode UI conventions.
