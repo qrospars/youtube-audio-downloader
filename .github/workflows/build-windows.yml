@@ -1,0 +1,136 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install ffmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v2
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install yt-dlp pyinstaller
+      
+      - name: Build EXE with PyInstaller
+        run: |
+          python -m PyInstaller --noconfirm --onefile --windowed `
+            --name youtube_mp3_downloader `
+            youtube_mp3_downloader.pyw
+      
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: youtube_mp3_downloader-windows
+          path: dist/youtube_mp3_downloader.exe
+
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install ffmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v2
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install yt-dlp pyinstaller
+      
+      - name: Build macOS app with PyInstaller
+        run: |
+          python -m PyInstaller --noconfirm --onefile --windowed \
+            --name youtube_mp3_downloader \
+            youtube_mp3_downloader.pyw
+      
+      - name: Create macOS DMG
+        run: |
+          mkdir -p dmg_staging
+          cp -r dist/youtube_mp3_downloader.app dmg_staging/
+          hdiutil create -volname "youtube_mp3_downloader" \
+            -srcfolder dmg_staging \
+            -ov -format UDZO dist/youtube_mp3_downloader.dmg
+      
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: youtube_mp3_downloader-macos
+          path: dist/youtube_mp3_downloader.dmg
+
+  release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: youtube_mp3_downloader-windows
+          path: ./windows
+      
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: youtube_mp3_downloader-macos
+          path: ./macos
+      
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.run_number }}
+          release_name: Release v${{ github.run_number }}
+          body: |
+            Automated build from commit ${{ github.sha }}
+            
+            **Binaries:**
+            - Windows: youtube_mp3_downloader.exe
+            - macOS: youtube_mp3_downloader.dmg
+          draft: false
+          prerelease: false
+      
+      - name: Upload Windows to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./windows/youtube_mp3_downloader.exe
+          asset_name: youtube_mp3_downloader-windows.exe
+          asset_content_type: application/vnd.microsoft.portable-executable
+      
+      - name: Upload macOS to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./macos/youtube_mp3_downloader.dmg
+          asset_name: youtube_mp3_downloader-macos.dmg
+          asset_content_type: application/octet-stream
