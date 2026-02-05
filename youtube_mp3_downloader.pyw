@@ -432,7 +432,7 @@ class App:
         # Bind click event to Browse button
         browse_btn = tk.Label(
             row, text="Browse\u2026",
-            bg=_BTN_BG, fg=_BTN_FG, font=_FONT, 
+            bg=_BTN_BG, fg="#000000", font=_FONT, 
             relief=tk.RAISED, bd=1, padx=10, pady=4, cursor="hand2"
         )
         browse_btn.pack(side="left", padx=(6, 0))
@@ -457,7 +457,7 @@ class App:
 
         self.cancel_btn = tk.Button(
             ctrl, text="Cancel",
-            bg=_BTN_BG, fg="#666666", font=_FONT, 
+            bg=_BTN_BG, fg="#999999", font=_FONT, 
             relief=tk.RAISED, bd=1, padx=10, pady=4, cursor="hand2"
         )
         self.cancel_btn.pack(side="right")
@@ -466,7 +466,7 @@ class App:
 
         self.dl_btn = tk.Label(
             ctrl, text="Download",
-            bg=_BTN_BG, fg=_BTN_FG, font=_FONT, 
+            bg=_BTN_BG, fg="#000000", font=_FONT, 
             relief=tk.RAISED, bd=1, padx=10, pady=4, cursor="hand2"
         )
         self.dl_btn.pack(side="right", padx=(0, 8))
@@ -520,14 +520,14 @@ class App:
     def _set_download_btn_state(self, enabled: bool):
         """Enable or disable the download button."""
         self.dl_btn.configure(
-            fg=_BTN_FG if enabled else "#999999"
+            fg="#000000" if enabled else "#999999"
         )
         self.dl_btn_enabled = enabled
 
     def _set_cancel_btn_state(self, enabled: bool):
         """Enable or disable the cancel button."""
         self.cancel_btn.configure(
-            fg=_BTN_FG if enabled else "#999999"
+            fg="#000000" if enabled else "#999999"
         )
         self.cancel_btn_enabled = enabled
 
