@@ -133,3 +133,5 @@ The generated executable is in `dist/`.
 ## Contributing
 
 Fork the repo, implement a feature, and submit a pull request. Please adhere to the existing code style and dark-mode UI conventions.
+
+For development setup and testing instructions, see [CONTRIBUTING.md](CONTRIBUTING.md).
