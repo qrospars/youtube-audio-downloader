@@ -3,7 +3,7 @@
 This project uses Git Flow branching model:
 
 ## Main Branches
-- **main** - Production-ready code. Automatically creates releases when pushed to.
+- **main** - Production-ready code. Merge here, then create a git tag to trigger releases.
 - **develop** - Integration branch for features. Builds but does not release.
 
 ## Supporting Branches
@@ -37,13 +37,22 @@ git push origin hotfix/my-fix
 ```
 
 ### Releasing
-1. Create a PR from `develop` to `main`
-2. Merge the PR
-3. The CI/CD pipeline automatically:
+1. Merge PR from `develop` → `main`
+2. Create a git tag with semantic version:
+   ```bash
+   git checkout main
+   git pull origin main
+   git tag -a v1.1.0 -m "Release v1.1.0"
+   git push origin v1.1.0
+   ```
+3. GitHub Actions automatically:
    - Builds Windows `.exe`
    - Builds macOS `.dmg`
-   - Generates changelog from commit messages
-   - Creates a GitHub Release with both binaries
+   - Generates changelog from commits since last tag
+   - Creates GitHub Release matching the tag name
+4. Users download from [Releases](../../releases) page
+
+**Version Format:** Use semantic versioning (v1.0.0, v1.0.1, v1.1.0, v2.0.0)
 
 ## Commit Message Format
 For better changelog generation, use conventional commits:
