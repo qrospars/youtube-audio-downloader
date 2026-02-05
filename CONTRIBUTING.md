@@ -63,6 +63,9 @@ pytest tests/test_integration.py -v -k "not cancel"
 - `ffmpeg` installed (`brew install ffmpeg` on macOS)
 - Working internet connection
 - ~60 seconds for full test suite
+- ~50 MB disk space (temporary, cleaned up automatically)
+
+**Note:** Test downloads use pytest's temporary directories, automatically cleaned up after tests complete. No disk space is permanently used.
 
 Covers:
 - Playlist extraction and parsing
