@@ -1,11 +1,6 @@
 name: Build
 
 on:
-  push:
-    branches:
-      - develop
-      - 'feature/**'
-      - 'hotfix/**'
   pull_request:
   workflow_dispatch:
 
