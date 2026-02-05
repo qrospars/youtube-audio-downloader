@@ -431,7 +431,8 @@ class App:
         tk.Button(
             row, text="Browse\u2026", command=self._choose_folder,
             bg=_BTN_BG, fg=_FG, activebackground=_BTN_ACTIVE,
-            activeforeground=_FG, bd=0, highlightthickness=0, font=_FONT,
+            activeforeground=_FG, bd=1, highlightthickness=0, font=_FONT,
+            disabledforeground="#666666",
         ).pack(side="left", padx=(6, 0))
 
         # -- Controls row (workers + buttons) --------------------------------
@@ -454,15 +455,15 @@ class App:
         self.cancel_btn = tk.Button(
             ctrl, text="Cancel", command=self._on_cancel,
             bg=_BTN_BG, fg=_FG, activebackground=_BTN_ACTIVE,
-            activeforeground=_FG, bd=0, highlightthickness=0,
-            font=_FONT, state="disabled",
+            activeforeground=_FG, bd=1, highlightthickness=0,
+            font=_FONT, state="disabled", disabledforeground="#666666",
         )
         self.cancel_btn.pack(side="right")
 
         self.dl_btn = tk.Button(
             ctrl, text="Download", command=self._start_download,
             bg=_BTN_BG, fg=_FG, activebackground=_BTN_ACTIVE,
-            activeforeground=_FG, bd=0, highlightthickness=0, font=_FONT,
+            activeforeground=_FG, bd=1, highlightthickness=0, font=_FONT,
         )
         self.dl_btn.pack(side="right", padx=(0, 8))
 
