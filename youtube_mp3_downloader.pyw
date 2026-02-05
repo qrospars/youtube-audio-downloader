@@ -33,6 +33,9 @@ try:
 except ImportError:
     yt_dlp = None
 
+# Global lock for thread-safe settings access
+_settings_lock = threading.Lock()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -61,22 +64,24 @@ def _settings_path() -> Path:
 
 
 def _load_settings() -> dict:
-    path = _settings_path()
-    if path.exists():
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
+    with _settings_lock:
+        path = _settings_path()
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                pass
     return {}
 
 
 def _save_settings(settings: dict) -> None:
-    try:
-        _settings_path().write_text(
-            json.dumps(settings, indent=2), encoding="utf-8"
-        )
-    except OSError:
-        pass
+    with _settings_lock:
+        try:
+            _settings_path().write_text(
+                json.dumps(settings, indent=2), encoding="utf-8"
+            )
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +143,7 @@ class DownloadEngine:
             "quiet": True,
             "no_warnings": True,
             "ignoreerrors": True,
+            "socket_timeout": 30,  # Prevent hanging on unresponsive connections
         }
         ffmpeg = _get_ffmpeg_location()
         if ffmpeg:
@@ -300,7 +306,8 @@ class DownloadEngine:
                             "total_bytes_estimate"
                         )
                         if total_bytes and total_bytes > 0:
-                            _t.progress_pct = (
+                            _t.progress_pct = min(
+                                100.0,
                                 d["downloaded_bytes"] / total_bytes * 100
                             )
                         self.on_update(_t)
@@ -326,7 +333,8 @@ class DownloadEngine:
                 self.on_update(task)
                 return
 
-            except Exception as e:
+            except (yt_dlp.utils.DownloadError, OSError, IOError, TimeoutError) as e:
+                # Retryable errors: network issues, file I/O, timeouts
                 task.error_msg = str(e)
                 if attempt < self.MAX_RETRIES:
                     task.status = VideoStatus.PENDING
@@ -341,6 +349,11 @@ class DownloadEngine:
                 else:
                     task.status = VideoStatus.FAILED
                     self.on_update(task)
+            except Exception as e:
+                # Non-retryable errors: fail immediately
+                task.status = VideoStatus.FAILED
+                task.error_msg = f"Fatal: {str(e)}"
+                self.on_update(task)
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +388,9 @@ class App:
         root.geometry("700x500")
         root.configure(bg=_BG)
         root.minsize(500, 380)
+
+        # Validate dependencies on startup
+        self._validate_dependencies()
 
         self.engine: Optional[DownloadEngine] = None
         self._update_queue: Queue = Queue()
@@ -493,6 +509,32 @@ class App:
         # If no saved folder, prompt user on first launch
         if not saved_outdir:
             self.root.after(100, self._prompt_initial_folder)
+
+    # -- validation
+
+    def _validate_dependencies(self):
+        """Check required dependencies on startup."""
+        if yt_dlp is None:
+            messagebox.showerror(
+                "Missing Dependency",
+                "yt-dlp module not found.\nInstall with: pip install yt-dlp"
+            )
+            self.root.after(100, self.root.quit)
+            return
+
+        if not _get_ffmpeg_location() and not shutil.which("ffmpeg"):
+            result = messagebox.askyesno(
+                "ffmpeg Not Found",
+                "ffmpeg is not installed or not on PATH.\n\n"
+                "This is required to convert audio to MP3.\n\n"
+                "Install ffmpeg:\n"
+                "  macOS: brew install ffmpeg\n"
+                "  Windows: https://www.gyan.dev/ffmpeg/builds/\n"
+                "  Linux: sudo apt install ffmpeg\n\n"
+                "Continue anyway?"
+            )
+            if not result:
+                self.root.after(100, self.root.quit)
 
     # -- folder chooser ------------------------------------------------------
 
@@ -622,14 +664,7 @@ class App:
             status_msg += f" ({len(already)} already downloaded)"
         self._append_log(f"{status_msg}. Starting download\u2026\n")
 
-        self.engine = DownloadEngine(
-            outdir=outdir,
-            max_workers=workers,
-            on_update=self._schedule_update,
-            on_complete=self._schedule_complete,
-        )
-
-        # pre-fill log lines
+        # Pre-initialize task marks to prevent race condition
         self._task_marks: dict[int, str] = {}
         self.log.configure(state="normal")
         for i, entry in enumerate(entries, 1):
@@ -649,6 +684,13 @@ class App:
         self.pbar["value"] = len(already)
         self.pbar_label.configure(text=f"{len(already)}/{len(entries)}")
 
+        # Now create engine after all marks are set
+        self.engine = DownloadEngine(
+            outdir=outdir,
+            max_workers=workers,
+            on_update=self._schedule_update,
+            on_complete=self._schedule_complete,
+        )
         self.engine.start(entries, skip_ids=already)
 
     def _on_cancel(self):

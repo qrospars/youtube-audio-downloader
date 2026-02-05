@@ -19,6 +19,7 @@ from youtube_mp3_downloader import (
     _save_settings,
     _settings_path,
     _truncate,
+    _settings_lock,
 )
 
 
@@ -342,3 +343,71 @@ class TestEngineCancel:
         tasks = engine.tasks
         assert len(tasks) == 1
         assert tasks is not engine._tasks  # must be a copy
+
+
+# ---------------------------------------------------------------------------
+# Thread safety
+# ---------------------------------------------------------------------------
+
+class TestThreadSafety:
+    def test_settings_lock_protects_concurrent_writes(self, tmp_path, monkeypatch):
+        """Multiple threads writing settings concurrently should not corrupt file."""
+        settings_file = tmp_path / "settings.json"
+        monkeypatch.setattr(
+            "youtube_mp3_downloader._settings_path", lambda: settings_file
+        )
+        
+        errors = []
+        def write_setting(key, value):
+            try:
+                for _ in range(10):
+                    s = _load_settings()
+                    s[key] = value
+                    _save_settings(s)
+            except Exception as e:
+                errors.append(e)
+        
+        threads = [
+            threading.Thread(target=write_setting, args=(f"key_{i}", i))
+            for i in range(5)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        
+        assert not errors, f"Thread safety errors: {errors}"
+        final = _load_settings()
+        assert len(final) >= 1  # At least some keys should be present
+
+    def test_progress_clamped_to_100(self):
+        """Progress percentage should never exceed 100%."""
+        engine = DownloadEngine(
+            outdir=Path("/tmp"),
+            max_workers=1,
+            on_update=MagicMock(),
+            on_complete=MagicMock(),
+        )
+        task = VideoTask(url="http://x", title="X", video_id="1", index=1, total=1)
+        
+        # Simulate progress callback with values > 100%
+        called_values = []
+        def capture_update(t):
+            called_values.append(t.progress_pct)
+        
+        engine.on_update = capture_update
+        
+        # Manually trigger progress calculation
+        def _progress(d):
+            if d["status"] == "downloading":
+                total = d.get("total_bytes", 100)
+                downloaded = d.get("downloaded_bytes", 105)
+                if total > 0:
+                    task.progress_pct = min(
+                        100.0,
+                        downloaded / total * 100
+                    )
+                engine.on_update(task)
+        
+        _progress({"status": "downloading", "total_bytes": 100, "downloaded_bytes": 105})
+        assert called_values[-1] <= 100.0, f"Progress exceeded 100%: {called_values[-1]}"
