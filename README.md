@@ -1,51 +1,54 @@
-# YouTube→MP3 Downloader
+# YouTube → MP3 Downloader
 
-A cross-platform, standalone Tkinter GUI application for downloading single YouTube videos or entire playlists as 320 kbps MP3 files with embedded metadata and thumbnail art.
+A cross-platform, standalone Tkinter GUI application for downloading single YouTube videos or entire playlists as 320 kbps MP3 files with embedded metadata and thumbnail art.
 
 ---
 
 ## Features
 
-* **Single video or playlist** support
+* **Single video or playlist** support (auto-detected)
+* **Parallel downloads** – configurable worker count (1, 2, 4, or 8 concurrent downloads)
+* **Real-time progress** – overall progress bar + per-video status with percentage
+* **Per-video retry** with exponential backoff (3 attempts per video)
+* **Cancel** ongoing downloads cleanly
 * **Automatic skipping** of previously downloaded items
-* **Clear, dark-mode UI** with live, per-item progress
+* **Dark-mode UI** with color-coded status indicators
 * **Embedded metadata**: title, artist (uploader), album (playlist title)
 * **Embedded thumbnail** as cover art
 * **Standalone bundling** via PyInstaller (no Python or FFmpeg install required)
-
----
-
-## Table of Contents
-
-- [YouTube→MP3 Downloader](#youtubemp3-downloader)
-  - [Features](#features)
-  - [Table of Contents](#table-of-contents)
-  - [Requirements](#requirements)
-  - [Installation \& Setup](#installation--setup)
-  - [Running the App](#running-the-app)
-  - [Building a Standalone Executable](#building-a-standalone-executable)
-    - [Windows (PyInstaller)](#windows-pyinstaller)
-    - [macOS (PyInstaller)](#macos-pyinstaller)
-  - [Troubleshooting](#troubleshooting)
-  - [Future Changes \& Contribution](#future-changes--contribution)
+* **Cross-platform** releases for Windows and macOS via GitHub Actions
 
 ---
 
 ## Requirements
 
-* Python 3.8+
+For running from source:
+
+* Python 3.8+
 * `yt-dlp` Python module
-* TKinter (included in most Python installs)
-* FFmpeg (bundled or system)
+* Tkinter (included in most Python installs)
+* FFmpeg on PATH
+
+For the standalone build: no dependencies – everything is bundled.
 
 ---
 
 ## Installation & Setup
 
+### Option 1: Download a release (recommended)
+
+Download the latest release from the [Releases](../../releases) page:
+
+* **Windows**: `youtube_mp3_downloader_windows.zip` – extract and run the `.exe`
+* **macOS**: `youtube_mp3_downloader_macos.zip` – extract and run the binary
+  * On first launch you may need to right-click → Open to bypass Gatekeeper
+
+### Option 2: Run from source
+
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/yourname/youtube-audio-downloader.git
+   git clone https://github.com/qrospars/youtube-audio-downloader.git
    cd youtube-audio-downloader
    ```
 
@@ -55,84 +58,78 @@ A cross-platform, standalone Tkinter GUI application for downloading single YouT
    pip install yt-dlp
    ```
 
-3. **Obtain FFmpeg**
+3. **Install FFmpeg**
 
-   * **Windows**: Download the Essentials build from [gyan.dev/ffmpeg](https://www.gyan.dev/ffmpeg/builds/), unzip, and copy **`ffmpeg.exe`** into this project folder.
-   * **macOS/Linux**: Either install via Homebrew/apt/pacman (`brew install ffmpeg`) or drop a static `ffmpeg` binary beside the script.
+   * **macOS**: `brew install ffmpeg`
+   * **Windows**: Download from [gyan.dev/ffmpeg](https://www.gyan.dev/ffmpeg/builds/) and add to PATH
+   * **Linux**: `sudo apt install ffmpeg` (or your distro's package manager)
+
+4. **Run**
+
+   ```bash
+   python youtube_mp3_downloader.pyw
+   ```
 
 ---
 
-## Running the App
+## Usage
 
-Double‑click **`youtube_mp3_downloader.pyw`** (Windows) or run:
+1. Paste a **YouTube video URL** or **playlist URL**
+2. Choose an output folder (defaults to `~/Music/YouTube Downloads`)
+3. Select the number of **parallel workers** (1–8)
+4. Click **Download** and watch the progress:
 
-```bash
-python youtube_mp3_downloader.pyw
-```
-
-1. Paste a **YouTube video URL** or **playlist URL**.
-2. Click **Browse…** to choose (or type) an output folder.
-3. Hit **Download** and watch the log for progress:
-
-   * ▶ Downloading **X/Y: Title**
-   * ⏭️ Skipped if already present
-   * 🔄 Converting → 📝 Metadata → 🖼 Thumbnail
-   * ✅ Done or ❌ Failed
+   * Per-video status lines update in real-time with download percentage
+   * Overall progress bar shows how many videos are complete
+   * Failed videos are retried automatically (up to 3 times with backoff)
+   * Click **Cancel** to stop all downloads
 
 ---
 
 ## Building a Standalone Executable
 
-Produces a single double‑clickable file—no Python or FFmpeg install needed.
-
 ### Windows (PyInstaller)
 
-1. **Install PyInstaller**
+```bash
+pip install pyinstaller yt-dlp
 
-   ```bash
-   pip install pyinstaller
-   ```
-
-2. **Bundle**
-
-   ```powershell
-   py -3 -m PyInstaller --noconfirm --onefile --windowed --add-binary "ffmpeg.exe;." --name youtube_mp3_downloader youtube_mp3_downloader.pyw
-   ```
-
-3. **Distribute** the generated `dist\youtube_mp3_downloader.exe`.
+# Make sure ffmpeg.exe is on PATH or in the current directory
+py -3 -m PyInstaller --noconfirm --onefile --windowed \
+  --add-binary "$(which ffmpeg);." \
+  --add-binary "$(which ffprobe);." \
+  --name youtube_mp3_downloader \
+  youtube_mp3_downloader.pyw
+```
 
 ### macOS (PyInstaller)
 
-1. **Install** and place a static `ffmpeg` binary beside the script.
-2. **Bundle** 
+```bash
+pip install pyinstaller yt-dlp
+brew install ffmpeg
 
-   ```bash
-   python3 -m PyInstaller \
-     --noconfirm \
-     --onefile \
-     --windowed \
-     --add-binary "ffmpeg:." \
-     --name youtube_mp3_downloader \
-     youtube_mp3_downloader.pyw
-   ```
-3. **Optionally** wrap into a `.app` bundle or distribute the `dist/youtube_mp3_downloader` binary.
+python3 -m PyInstaller \
+  --noconfirm \
+  --onefile \
+  --windowed \
+  --add-binary "$(which ffmpeg):." \
+  --add-binary "$(which ffprobe):." \
+  --name youtube_mp3_downloader \
+  youtube_mp3_downloader.pyw
+```
+
+The generated executable is in `dist/`.
 
 ---
 
 ## Troubleshooting
 
-* **App doesn’t launch**: Ensure the file has `.pyw` extension on Windows or is opened with `pythonw` to suppress the console.
-* **FFmpeg not found**: Verify `ffmpeg.exe` (Windows) or `ffmpeg` (macOS/Linux) is present beside the script or on the PATH.
-* **`yt_dlp` errors**: Run `pip install yt-dlp` in the same Python environment.
+* **FFmpeg not found**: Ensure `ffmpeg` is on your PATH, or place the binary next to the script.
+* **`yt-dlp` errors**: Run `pip install -U yt-dlp` to update to the latest version.
+* **macOS Gatekeeper block**: Right-click the app → Open → Open to allow it through.
+* **Download fails repeatedly**: YouTube may be rate-limiting. Try reducing the worker count to 1 or 2.
 
 ---
 
-## Future Changes & Contribution
+## Contributing
 
-* **Improvements**: support drag‑and‑drop URLs, custom audio bitrates, multi‑threaded downloads
-* **Bug fixes**: edge cases in URL parsing, more robust FFmpeg embedding
-* **Contribute**: fork the repo, implement a feature, and submit a pull request. Please adhere to the existing code style and dark‑mode UI conventions.
-
----
-
-*Generated and maintained to keep your YouTube→MP3 workflow as simple and reliable as possible.*
+Fork the repo, implement a feature, and submit a pull request. Please adhere to the existing code style and dark-mode UI conventions.
