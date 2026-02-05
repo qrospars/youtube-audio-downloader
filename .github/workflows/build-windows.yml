@@ -35,7 +35,7 @@ jobs:
             youtube_mp3_downloader.pyw
       
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: youtube_mp3_downloader-windows
           path: dist/youtube_mp3_downloader.exe
@@ -74,7 +74,7 @@ jobs:
             -ov -format UDZO dist/youtube_mp3_downloader.dmg
       
       - name: Upload macOS artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: youtube_mp3_downloader-macos
           path: dist/youtube_mp3_downloader.dmg
@@ -88,49 +88,30 @@ jobs:
       - uses: actions/checkout@v3
       
       - name: Download Windows artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: youtube_mp3_downloader-windows
           path: ./windows
       
       - name: Download macOS artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: youtube_mp3_downloader-macos
           path: ./macos
       
-      - name: Create Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ github.run_number }}
-          release_name: Release v${{ github.run_number }}
+          name: Release v${{ github.run_number }}
           body: |
             Automated build from commit ${{ github.sha }}
             
             **Binaries:**
-            - Windows: youtube_mp3_downloader.exe
-            - macOS: youtube_mp3_downloader.dmg
+            - Windows: youtube_mp3_downloader-windows.exe
+            - macOS: youtube_mp3_downloader-macos.dmg
+          files: |
+            ./windows/youtube_mp3_downloader.exe
+            ./macos/youtube_mp3_downloader.dmg
           draft: false
           prerelease: false
-      
-      - name: Upload Windows to Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./windows/youtube_mp3_downloader.exe
-          asset_name: youtube_mp3_downloader-windows.exe
-          asset_content_type: application/vnd.microsoft.portable-executable
-      
-      - name: Upload macOS to Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./macos/youtube_mp3_downloader.dmg
-          asset_name: youtube_mp3_downloader-macos.dmg
-          asset_content_type: application/octet-stream
