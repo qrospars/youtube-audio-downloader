@@ -52,7 +52,7 @@ jobs:
           python-version: '3.11'
       
       - name: Install ffmpeg
-        uses: FedericoCarboni/setup-ffmpeg@v2
+        run: brew install ffmpeg
       
       - name: Install dependencies
         run: |
