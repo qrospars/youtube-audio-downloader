@@ -99,19 +99,17 @@ jobs:
           name: youtube_mp3_downloader-macos
           path: ./macos
       
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ github.run_number }}
-          name: Release v${{ github.run_number }}
-          body: |
-            Automated build from commit ${{ github.sha }}
-            
-            **Binaries:**
-            - Windows: youtube_mp3_downloader-windows.exe
-            - macOS: youtube_mp3_downloader-macos.dmg
-          files: |
-            ./windows/youtube_mp3_downloader.exe
-            ./macos/youtube_mp3_downloader.dmg
-          draft: false
-          prerelease: false
+      - name: Create GitHub Release with both binaries
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ github.run_number }}"
+          gh release create "$TAG" \
+            ./windows/youtube_mp3_downloader.exe \
+            ./macos/youtube_mp3_downloader.dmg \
+            --title "Release $TAG" \
+            --notes "Automated build from commit ${{ github.sha }}
+          
+          **Downloads:**
+          - Windows: youtube_mp3_downloader.exe
+          - macOS: youtube_mp3_downloader.dmg"
