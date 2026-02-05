@@ -364,8 +364,9 @@ _BG = "#121212"
 _BG2 = "#1e1e1e"
 _FG = "#e0e0e0"
 _ENTRY_BG = "#2c2c2c"
-_BTN_BG = "#3c3c3c"
-_BTN_ACTIVE = "#505050"
+_BTN_BG = "#404040"
+_BTN_ACTIVE = "#555555"
+_BTN_FG = "#ffffff"
 _ACCENT = "#4fc3f7"
 _FONT = ("Segoe UI", 10)
 _MONO = ("Consolas", 10)
@@ -428,12 +429,14 @@ class App:
             highlightbackground="#444", highlightcolor="#777",
             font=_FONT,
         ).pack(side="left", fill="x", expand=True)
-        tk.Button(
-            row, text="Browse\u2026", command=self._choose_folder,
-            bg=_BTN_BG, fg=_FG, activebackground=_BTN_ACTIVE,
-            activeforeground=_FG, bd=1, highlightthickness=0, font=_FONT,
-            disabledforeground="#666666",
-        ).pack(side="left", padx=(6, 0))
+        # Bind click event to Browse button
+        browse_btn = tk.Label(
+            row, text="Browse\u2026",
+            bg=_BTN_BG, fg=_BTN_FG, font=_FONT, 
+            relief=tk.RAISED, bd=1, padx=10, pady=4, cursor="hand2"
+        )
+        browse_btn.pack(side="left", padx=(6, 0))
+        browse_btn.bind("<Button-1>", lambda e: self._choose_folder())
 
         # -- Controls row (workers + buttons) --------------------------------
         ctrl = tk.Frame(root, bg=_BG)
@@ -453,19 +456,22 @@ class App:
         combo.pack(side="left", padx=(4, 12))
 
         self.cancel_btn = tk.Button(
-            ctrl, text="Cancel", command=self._on_cancel,
-            bg=_BTN_BG, fg=_FG, activebackground=_BTN_ACTIVE,
-            activeforeground=_FG, bd=1, highlightthickness=0,
-            font=_FONT, state="disabled", disabledforeground="#666666",
+            ctrl, text="Cancel",
+            bg=_BTN_BG, fg="#666666", font=_FONT, 
+            relief=tk.RAISED, bd=1, padx=10, pady=4, cursor="hand2"
         )
         self.cancel_btn.pack(side="right")
+        self.cancel_btn.bind("<Button-1>", lambda e: self._on_cancel() if self.cancel_btn_enabled else None)
+        self.cancel_btn_enabled = False
 
-        self.dl_btn = tk.Button(
-            ctrl, text="Download", command=self._start_download,
-            bg=_BTN_BG, fg=_FG, activebackground=_BTN_ACTIVE,
-            activeforeground=_FG, bd=1, highlightthickness=0, font=_FONT,
+        self.dl_btn = tk.Label(
+            ctrl, text="Download",
+            bg=_BTN_BG, fg=_BTN_FG, font=_FONT, 
+            relief=tk.RAISED, bd=1, padx=10, pady=4, cursor="hand2"
         )
         self.dl_btn.pack(side="right", padx=(0, 8))
+        self.dl_btn.bind("<Button-1>", lambda e: self._start_download() if self.dl_btn_enabled else None)
+        self.dl_btn_enabled = True
 
         # -- Progress bar ----------------------------------------------------
         pbar_frame = tk.Frame(root, bg=_BG)
@@ -510,6 +516,20 @@ class App:
         # If no saved folder, prompt user on first launch
         if not saved_outdir:
             self.root.after(100, self._prompt_initial_folder)
+
+    def _set_download_btn_state(self, enabled: bool):
+        """Enable or disable the download button."""
+        self.dl_btn.configure(
+            fg=_BTN_FG if enabled else "#999999"
+        )
+        self.dl_btn_enabled = enabled
+
+    def _set_cancel_btn_state(self, enabled: bool):
+        """Enable or disable the cancel button."""
+        self.cancel_btn.configure(
+            fg=_BTN_FG if enabled else "#999999"
+        )
+        self.cancel_btn_enabled = enabled
 
     # -- validation
 
@@ -604,8 +624,8 @@ class App:
         self.log.configure(state="disabled")
         self.pbar["value"] = 0
         self.pbar_label.configure(text="")
-        self.dl_btn.configure(state="disabled")
-        self.cancel_btn.configure(state="normal")
+        self._set_download_btn_state(False)
+        self._set_cancel_btn_state(True)
 
         self._append_log("Fetching video info\u2026")
 
@@ -622,14 +642,14 @@ class App:
 
     def _on_fetch_error(self, msg: str):
         self._append_log(f"Error: {msg}", error=True)
-        self.dl_btn.configure(state="normal")
-        self.cancel_btn.configure(state="disabled")
+        self._set_download_btn_state(True)
+        self._set_cancel_btn_state(False)
 
     def _on_fetch_done(self, entries: list[dict], outdir: Path, workers: int):
         if not entries:
             self._append_log("No downloadable videos found.", error=True)
-            self.dl_btn.configure(state="normal")
-            self.cancel_btn.configure(state="disabled")
+            self._set_download_btn_state(True)
+            self._set_cancel_btn_state(False)
             return
 
         # Check which videos are already downloaded
@@ -650,14 +670,14 @@ class App:
             )
             if not confirmed:
                 self._append_log("Download cancelled by user.")
-                self.dl_btn.configure(state="normal")
-                self.cancel_btn.configure(state="disabled")
+                self._set_download_btn_state(True)
+                self._set_cancel_btn_state(False)
                 return
 
         if new_count == 0:
             self._append_log("All videos already downloaded.")
-            self.dl_btn.configure(state="normal")
-            self.cancel_btn.configure(state="disabled")
+            self._set_download_btn_state(True)
+            self._set_cancel_btn_state(False)
             return
 
         status_msg = f"Found {len(entries)} video(s)"
@@ -697,7 +717,42 @@ class App:
     def _on_cancel(self):
         if self.engine:
             self.engine.cancel()
-        self.cancel_btn.configure(state="disabled")
+            # Clean up incomplete downloads
+            self._cleanup_incomplete_downloads()
+        self._set_cancel_btn_state(False)
+
+    def _cleanup_incomplete_downloads(self):
+        """Remove incomplete MP3 files that weren't fully downloaded."""
+        if not hasattr(self, '_task_marks'):
+            return
+        
+        outdir = Path(self.outdir_var.get())
+        if not outdir.exists():
+            return
+        
+        # Collect filenames that were successfully completed
+        completed_files = set()
+        for idx, mark_text in self._task_marks.items():
+            # Mark text contains the filename if download completed
+            # Format is typically "filename.mp3 ✓" for completed
+            if "✓" in mark_text or "COMPLETED" in mark_text or "SKIPPED" in mark_text:
+                # Extract filename from mark text (before the status indicator)
+                filename = mark_text.split()[0] if mark_text else None
+                if filename and filename.endswith(".mp3"):
+                    completed_files.add(filename)
+        
+        # Remove all MP3 files not in completed list
+        removed_count = 0
+        for mp3_file in outdir.glob("*.mp3"):
+            try:
+                if mp3_file.name not in completed_files:
+                    mp3_file.unlink()
+                    removed_count += 1
+            except OSError:
+                pass
+        
+        if removed_count > 0:
+            self._append_log(f"Cleaned up {removed_count} incomplete file(s).", info=True)
 
     # -- thread-safe GUI updates ---------------------------------------------
 
@@ -792,8 +847,8 @@ class App:
         else:
             self._append_log(f"\n\u2705 Done! {summary}")
 
-        self.dl_btn.configure(state="normal")
-        self.cancel_btn.configure(state="disabled")
+        self._set_download_btn_state(True)
+        self._set_cancel_btn_state(False)
         self.engine = None
 
     # -- simple append log ---------------------------------------------------
